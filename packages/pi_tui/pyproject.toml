@@ -3,7 +3,10 @@ name = "pi_tui"
 version = "0.1.0"
 description = "Textual widgets and layouts for the pi-python coding CLI"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "pi-agent",
+    "textual>=8.2.8",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -11,3 +14,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pi_tui"]
+
+[tool.uv.sources]
+pi-agent = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest-asyncio>=1.4.0",
+]
