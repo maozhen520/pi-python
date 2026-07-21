@@ -272,6 +272,7 @@ packages/
 
 ## 相关文档
 
+- [`docs/architecture.md`](docs/architecture.md) — 四包关系、运行核心、扩展点与自定义工具
 - [`CONTEXT.md`](CONTEXT.md) — 领域词汇表
 - [`docs/agents/implementation-handoff.md`](docs/agents/implementation-handoff.md) — v1 实现交接
 - [`docs/research/`](docs/research/) — 上游与 LiteLLM 调研笔记
