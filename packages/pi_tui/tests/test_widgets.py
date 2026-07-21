@@ -6,6 +6,7 @@ import pytest
 from pi_agent.types import AssistantStreamTextDelta
 
 from pi_agent import (
+    AgentToolResult,
     AssistantMessage,
     MessageEndEvent,
     MessageStartEvent,
@@ -14,7 +15,13 @@ from pi_agent import (
     ToolExecutionStartEvent,
     UserMessage,
 )
-from pi_tui import CodingApp, EditorWidget, ToolDisplay, TranscriptView
+from pi_tui import (
+    CodingApp,
+    EditorWidget,
+    StreamingAssistantView,
+    ToolDisplay,
+    TranscriptView,
+)
 
 
 @pytest.mark.asyncio
@@ -37,7 +44,7 @@ async def test_transcript_updates_from_message_events() -> None:
 async def test_streaming_assistant_updates_incrementally() -> None:
     app = CodingApp()
     async with app.run_test() as pilot:
-        transcript = app.query_one(TranscriptView)
+        streaming = app.query_one(StreamingAssistantView)
         partial = AssistantMessage(content="")
         app.handle_event(MessageStartEvent(message=partial))
         app.handle_event(
@@ -50,7 +57,7 @@ async def test_streaming_assistant_updates_incrementally() -> None:
             )
         )
         await pilot.pause()
-        assert "Hel" in transcript.visible_text()
+        assert "Hel" in streaming.visible_text()
 
         app.handle_event(
             MessageUpdateEvent(
@@ -62,7 +69,14 @@ async def test_streaming_assistant_updates_incrementally() -> None:
             )
         )
         await pilot.pause()
-        assert "Hello" in transcript.visible_text()
+        assert streaming.visible_text() == "Hello"
+
+        app.handle_event(
+            MessageEndEvent(message=AssistantMessage(content="Hello", stop_reason="stop"))
+        )
+        await pilot.pause()
+        assert streaming.visible_text() == ""
+        assert "Hello" in app.query_one(TranscriptView).visible_text()
 
 
 @pytest.mark.asyncio
@@ -79,19 +93,19 @@ async def test_tool_display_shows_start_and_end() -> None:
         )
         await pilot.pause()
         assert "read" in tools.visible_text()
+        assert "a.txt" in tools.visible_text()
 
         app.handle_event(
             ToolExecutionEndEvent(
                 tool_call_id="1",
                 tool_name="read",
-                result=__import__("pi_agent", fromlist=["AgentToolResult"]).AgentToolResult(
-                    content="ok"
-                ),
+                result=AgentToolResult(content="ok"),
                 is_error=False,
             )
         )
         await pilot.pause()
-        assert "ok" in tools.visible_text() or "done" in tools.visible_text().lower()
+        assert "ok" in tools.visible_text()
+        assert "done" in tools.visible_text()
 
 
 @pytest.mark.asyncio

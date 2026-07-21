@@ -23,7 +23,7 @@ from pi_agent import (
 
 
 class TranscriptView(Static):
-    """Scrollable transcript of settled + streaming messages."""
+    """Scrollable transcript of settled messages."""
 
     DEFAULT_CSS = """
     TranscriptView {
@@ -37,26 +37,41 @@ class TranscriptView(Static):
     def __init__(self, **kwargs) -> None:
         super().__init__("", **kwargs)
         self._lines: list[str] = []
-        self._streaming: str | None = None
 
     def visible_text(self) -> str:
-        parts = list(self._lines)
-        if self._streaming is not None:
-            parts.append(self._streaming)
-        return "\n".join(parts)
+        return "\n".join(self._lines)
 
     def append_settled(self, role: str, content: str) -> None:
-        self._streaming = None
         self._lines.append(f"[{role}] {content}")
         self.update(self.visible_text())
 
-    def set_streaming(self, content: str) -> None:
-        self._streaming = f"[assistant*] {content}"
-        self.update(self.visible_text())
 
-    def clear_streaming(self) -> None:
-        self._streaming = None
-        self.update(self.visible_text())
+class StreamingAssistantView(Static):
+    """Live assistant text while a turn is still streaming."""
+
+    DEFAULT_CSS = """
+    StreamingAssistantView {
+        height: auto;
+        max-height: 12;
+        border: solid $primary;
+        padding: 0 1;
+    }
+    """
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__("", **kwargs)
+        self._content: str | None = None
+
+    def visible_text(self) -> str:
+        return self._content or ""
+
+    def set_streaming(self, content: str) -> None:
+        self._content = content
+        self.update(f"[assistant streaming] {content}")
+
+    def clear(self) -> None:
+        self._content = None
+        self.update("")
 
 
 class ToolDisplay(Static):
@@ -131,29 +146,28 @@ class CodingApp(App[None]):
     def __init__(self, on_submit: Callable[[str], None] | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
         self._on_submit = on_submit
-        self._stream_buffer = ""
 
     def compose(self) -> ComposeResult:
         with Vertical():
             yield TranscriptView(id="transcript")
+            yield StreamingAssistantView(id="streaming")
             yield ToolDisplay(id="tools")
             yield EditorWidget(on_submit=self._on_submit, id="editor")
 
     def handle_event(self, event: AgentEvent) -> None:
+        """Apply an agent runtime event to the four UI blocks."""
         transcript = self.query_one(TranscriptView)
+        streaming = self.query_one(StreamingAssistantView)
         tools = self.query_one(ToolDisplay)
 
-        if isinstance(event, MessageStartEvent) and isinstance(event.message, AssistantMessage):
-            self._stream_buffer = event.message.content or ""
-            transcript.set_streaming(self._stream_buffer)
-            return
-
-        if isinstance(event, MessageUpdateEvent) and isinstance(event.message, AssistantMessage):
-            self._stream_buffer = event.message.content or ""
-            transcript.set_streaming(self._stream_buffer)
+        if isinstance(event, (MessageStartEvent, MessageUpdateEvent)) and isinstance(
+            event.message, AssistantMessage
+        ):
+            streaming.set_streaming(event.message.content or "")
             return
 
         if isinstance(event, MessageEndEvent):
+            streaming.clear()
             message = event.message
             if isinstance(message, UserMessage):
                 transcript.append_settled("user", message.content)
