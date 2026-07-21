@@ -6,12 +6,31 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
-from pi_agent.types import AssistantStreamDone, AssistantStreamEvent, AssistantStreamStart
+from pi_agent.types import (
+    AssistantStreamDone,
+    AssistantStreamEvent,
+    AssistantStreamStart,
+    AssistantStreamTextDelta,
+)
 from pi_coding_agent.app import CodingSession, build_system_prompt
 from pi_coding_agent.resources import save_trust
+from pi_coding_agent.tui_wiring import apply_agent_event
 from pi_llm.credentials import resolve_credentials
 
-from pi_agent import AssistantMessage, StreamRequest, ToolCall, ToolResultMessage
+from pi_agent import (
+    AgentToolResult,
+    AssistantMessage,
+    MessageEndEvent,
+    MessageStartEvent,
+    MessageUpdateEvent,
+    StreamRequest,
+    ToolCall,
+    ToolExecutionEndEvent,
+    ToolExecutionStartEvent,
+    ToolResultMessage,
+    UserMessage,
+)
+from pi_tui import CodingApp, StreamingAssistantView, ToolDisplay, TranscriptView
 
 
 def _scripted_stream(responses: list[AssistantMessage]):
@@ -158,3 +177,77 @@ def test_trust_approve_flag_wired(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         approve_project=True,
     )
     assert "local" in session.system_prompt
+
+
+@pytest.mark.asyncio
+async def test_bind_tui_applies_runtime_events_to_widgets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home)
+    agent_dir = home / ".pi" / "agent"
+
+    session = CodingSession.create(
+        cwd=project,
+        agent_dir=agent_dir,
+        sessions_root=agent_dir / "sessions",
+        stream_fn=_scripted_stream(
+            [AssistantMessage(content="done via events", stop_reason="stop")]
+        ),
+        interactive=False,
+        approve_project=True,
+    )
+    app = CodingApp()
+    unsub = session.bind_tui(app)
+    async with app.run_test() as pilot:
+        transcript = app.query_one(TranscriptView)
+        streaming = app.query_one(StreamingAssistantView)
+        tools = app.query_one(ToolDisplay)
+
+        apply_agent_event(app, MessageEndEvent(message=UserMessage(content="hello user")))
+        await pilot.pause()
+        assert "hello user" in transcript.visible_text()
+
+        apply_agent_event(app, MessageStartEvent(message=AssistantMessage(content="")))
+        apply_agent_event(
+            app,
+            MessageUpdateEvent(
+                message=AssistantMessage(content="Hel"),
+                assistant_message_event=AssistantStreamTextDelta(
+                    partial=AssistantMessage(content="Hel"),
+                    delta="Hel",
+                ),
+            ),
+        )
+        await pilot.pause()
+        assert "Hel" in streaming.visible_text()
+
+        apply_agent_event(
+            app,
+            ToolExecutionStartEvent(
+                tool_call_id="1",
+                tool_name="read",
+                args={"path": "a.txt"},
+            ),
+        )
+        apply_agent_event(
+            app,
+            ToolExecutionEndEvent(
+                tool_call_id="1",
+                tool_name="read",
+                result=AgentToolResult(content="ok"),
+                is_error=False,
+            ),
+        )
+        await pilot.pause()
+        assert "read" in tools.visible_text()
+        assert "ok" in tools.visible_text()
+
+        await session.prompt("go")
+        await pilot.pause()
+        assert "done via events" in transcript.visible_text()
+        assert streaming.visible_text() == ""
+
+    unsub()

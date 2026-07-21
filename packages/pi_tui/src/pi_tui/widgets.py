@@ -5,21 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Vertical
 from textual.widgets import Static, TextArea
-
-from pi_agent import (
-    AgentEvent,
-    AgentToolResult,
-    AssistantMessage,
-    MessageEndEvent,
-    MessageStartEvent,
-    MessageUpdateEvent,
-    ToolExecutionEndEvent,
-    ToolExecutionStartEvent,
-    ToolResultMessage,
-    UserMessage,
-)
 
 
 class TranscriptView(Static):
@@ -97,9 +85,9 @@ class ToolDisplay(Static):
         self._lines.append(f"→ {name} {args}")
         self.update(self.visible_text())
 
-    def tool_end(self, name: str, result: AgentToolResult, *, is_error: bool) -> None:
+    def tool_end(self, name: str, content: str, *, is_error: bool) -> None:
         status = "error" if is_error else "done"
-        preview = (result.content or "").strip().replace("\n", " ")
+        preview = content.strip().replace("\n", " ")
         if len(preview) > 80:
             preview = preview[:77] + "..."
         self._lines.append(f"← {name} [{status}] {preview}")
@@ -107,7 +95,11 @@ class ToolDisplay(Static):
 
 
 class EditorWidget(TextArea):
-    """Multiline bottom editor with submit helper."""
+    """Multiline bottom editor; Ctrl+J submits."""
+
+    BINDINGS = [
+        Binding("ctrl+j", "submit_prompt", "Submit", priority=True),
+    ]
 
     DEFAULT_CSS = """
     EditorWidget {
@@ -133,6 +125,9 @@ class EditorWidget(TextArea):
             self._on_submit(value)
         self.load_text("")
 
+    def action_submit_prompt(self) -> None:
+        self.submit()
+
 
 class CodingApp(App[None]):
     """Minimal layout wiring the four v1 UI blocks."""
@@ -153,33 +148,3 @@ class CodingApp(App[None]):
             yield StreamingAssistantView(id="streaming")
             yield ToolDisplay(id="tools")
             yield EditorWidget(on_submit=self._on_submit, id="editor")
-
-    def handle_event(self, event: AgentEvent) -> None:
-        """Apply an agent runtime event to the four UI blocks."""
-        transcript = self.query_one(TranscriptView)
-        streaming = self.query_one(StreamingAssistantView)
-        tools = self.query_one(ToolDisplay)
-
-        if isinstance(event, (MessageStartEvent, MessageUpdateEvent)) and isinstance(
-            event.message, AssistantMessage
-        ):
-            streaming.set_streaming(event.message.content or "")
-            return
-
-        if isinstance(event, MessageEndEvent):
-            streaming.clear()
-            message = event.message
-            if isinstance(message, UserMessage):
-                transcript.append_settled("user", message.content)
-            elif isinstance(message, AssistantMessage):
-                transcript.append_settled("assistant", message.content or "")
-            elif isinstance(message, ToolResultMessage):
-                transcript.append_settled("tool", message.content)
-            return
-
-        if isinstance(event, ToolExecutionStartEvent):
-            tools.tool_start(event.tool_name, event.args)
-            return
-
-        if isinstance(event, ToolExecutionEndEvent):
-            tools.tool_end(event.tool_name, event.result, is_error=event.is_error)

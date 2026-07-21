@@ -34,6 +34,7 @@ dependencies = [
     { name = "typing-extensions", marker = "python_full_version < '3.13'" },
     { name = "yarl" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/1d/cc/58f26f118d8099f84e009ce560b9148a3f803e63fa8473b57feb67241875/aiohttp-3.14.2.tar.gz", hash = "sha256:f96821eb2ae2f12b0dfa799eafbf221f5621a9220b457b4744a269a63a5f3a6c", size = 7969860, upload-time = "2026-07-20T19:53:26.881Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f6/4a/a6c1426d2fb3cddd901575436803733caaaeb7ac0a49aa72d1930d2e3ab6/aiohttp-3.14.2-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:56432ee8f7abe47c97717cfbf5c32430463ea8a7138e12a87b7891fa6084c8ff", size = 764168, upload-time = "2026-07-20T19:50:07.389Z" },
     { url = "https://files.pythonhosted.org/packages/0c/62/88ae65afc3590719788cbff3b2e0f56e6850f53ca34114cbb371e677c543/aiohttp-3.14.2-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:6c244f7a65cbec04c830a301aae443c529d4dbca5fddfd4b19e5a179d896adfd", size = 516255, upload-time = "2026-07-20T19:50:08.84Z" },
@@ -1077,7 +1078,6 @@ name = "pi-tui"
 version = "0.1.0"
 source = { editable = "packages/pi_tui" }
 dependencies = [
-    { name = "pi-agent" },
     { name = "textual" },
 ]
 
@@ -1087,10 +1087,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "pi-agent", editable = "packages/pi_agent" },
-    { name = "textual", specifier = ">=8.2.8" },
-]
+requires-dist = [{ name = "textual", specifier = ">=8.2.8" }]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest-asyncio", specifier = ">=1.4.0" }]

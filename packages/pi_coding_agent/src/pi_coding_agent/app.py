@@ -7,10 +7,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from pi_agent import Agent, AgentEvent, StreamFn
+from pi_agent import Agent, StreamFn
 from pi_coding_agent.resources import LoadedResources, expand_prompt_template, load_resources
 from pi_coding_agent.session import Session, SessionStore, apply_compaction_view
 from pi_coding_agent.tools import create_builtin_tools
+from pi_coding_agent.tui_wiring import apply_agent_event
 from pi_tui import CodingApp
 
 
@@ -239,7 +240,4 @@ class CodingSession:
         return expand_prompt_template(prompt, args)
 
     def bind_tui(self, app: CodingApp) -> Callable[[], None]:
-        def on_event(event: AgentEvent) -> None:
-            app.handle_event(event)
-
-        return self.agent.subscribe(on_event)
+        return self.agent.subscribe(lambda event: apply_agent_event(app, event))
