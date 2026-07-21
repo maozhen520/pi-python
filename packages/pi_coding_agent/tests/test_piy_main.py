@@ -23,6 +23,7 @@ from pi_agent import (
     MessageEndEvent,
     MessageStartEvent,
     MessageUpdateEvent,
+    StreamFn,
     StreamRequest,
     ToolCall,
     ToolExecutionEndEvent,
@@ -42,6 +43,21 @@ def _scripted_stream(responses: list[AssistantMessage]):
         msg = remaining.pop(0)
         yield AssistantStreamStart(partial=AssistantMessage(content=""))
         yield AssistantStreamDone(message=msg)
+
+    return stream_fn
+
+
+def _delta_stream(text: str) -> StreamFn:
+    async def stream_fn(
+        request: StreamRequest,
+    ) -> AsyncIterator[AssistantStreamEvent]:
+        partial = AssistantMessage(content="")
+        yield AssistantStreamStart(partial=partial)
+        for char in text:
+            content = (partial.content or "") + char
+            partial = AssistantMessage(content=content)
+            yield AssistantStreamTextDelta(partial=partial, delta=char)
+        yield AssistantStreamDone(message=AssistantMessage(content=text, stop_reason="stop"))
 
     return stream_fn
 
@@ -251,3 +267,66 @@ async def test_bind_tui_applies_runtime_events_to_widgets(
         assert streaming.visible_text() == ""
 
     unsub()
+
+
+def test_cli_main_wires_piy_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from pi_coding_agent import cli
+
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    captured: dict[str, CodingSession] = {}
+
+    async def fake_run_interactive(session: CodingSession) -> None:
+        captured["session"] = session
+
+    monkeypatch.setattr(cli, "_run_interactive", fake_run_interactive)
+    monkeypatch.setattr(cli, "make_stream_fn", lambda **_: _scripted_stream([]))
+
+    cli.main(["--non-interactive", "--approve", "--cwd", str(project)])
+
+    session = captured["session"]
+    assert session.cwd == project.resolve()
+    assert any(t.name == "read" for t in session.agent.tools)
+    assert any(t.name == "write" for t in session.agent.tools)
+    assert any(t.name == "edit" for t in session.agent.tools)
+    assert any(t.name == "bash" for t in session.agent.tools)
+
+
+@pytest.mark.asyncio
+async def test_bind_tui_streaming_deltas_via_session_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home)
+    agent_dir = home / ".pi" / "agent"
+
+    session = CodingSession.create(
+        cwd=project,
+        agent_dir=agent_dir,
+        sessions_root=agent_dir / "sessions",
+        stream_fn=_delta_stream("Hello"),
+        interactive=False,
+        approve_project=True,
+    )
+    app = CodingApp()
+    event_types: list[str] = []
+    unsub_events = session.agent.subscribe(lambda e: event_types.append(e.type))
+    unsub_tui = session.bind_tui(app)
+
+    async with app.run_test() as pilot:
+        streaming = app.query_one(StreamingAssistantView)
+        transcript = app.query_one(TranscriptView)
+        await session.prompt("go")
+        await pilot.pause()
+        assert "message_update" in event_types
+        assert "Hello" in transcript.visible_text()
+        assert streaming.visible_text() == ""
+
+    unsub_tui()
+    unsub_events()
