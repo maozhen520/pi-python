@@ -2,6 +2,19 @@
 
 本文说明四个包如何协作、`piy` 一次交互的数据流，以及 v1 已留的扩展口子。
 
+## 项目背景
+
+本仓库是 **pi 语义在 Python 上的流程体验实现**，不是功能对齐的完整克隆。开发过程本身由 [mattpocock/skills](https://github.com/mattpocock/skills) 驱动：
+
+| 用途 | 典型 skill |
+|------|------------|
+| 拆票、画 wayfinder 地图 | `wayfinder` |
+| 调研上游 / API 事实 | `research` |
+| 需求澄清、领域词汇 | `grilling`、`domain-modeling` |
+| 快速验证 UI/逻辑 | `prototype` |
+
+Skills 安装在 `~/.agents/skills/`（与 [mattpocock/skills](https://github.com/mattpocock/skills) 仓库布局一致）。`piy` 通过 `load_resources()` 发现技能目录，把摘要注入 system prompt；完整说明由模型按需 `read` 工具读取 `SKILL.md`。
+
 ## 四包关系
 
 ```text

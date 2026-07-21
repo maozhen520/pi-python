@@ -15,7 +15,9 @@ TranscriptView {
     min-height: 6;
     background: #0c0c0e;
     border: none;
-    padding: 0;
+    overflow-y: auto;
+    padding: 0 0 1 0;
+    color: #d4d4d8;
 }
 
 EditorWidget {

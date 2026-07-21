@@ -8,7 +8,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.events import Key
-from textual.widgets import RichLog, TextArea
+from textual.widgets import Static, TextArea
 
 from pi_tui.mac import short_model_name, shorten_path
 from pi_tui.theme import APP_CSS
@@ -23,22 +23,25 @@ def _shorten(text: str, limit: int = 96) -> str:
     return one_line[: limit - 3] + "..."
 
 
-class HeaderBar(RichLog):
+class HeaderBar(Static):
     """Minimal top strip."""
 
     DEFAULT_CSS = "HeaderBar { dock: top; height: 1; background: #111114; }"
 
+    def __init__(self, **kwargs) -> None:
+        super().__init__("", markup=True, **kwargs)
+
     def on_mount(self) -> None:
-        self.write("[bold #e4e4e7]piy[/] [dim]coding agent[/]")
+        self.update("[bold #e4e4e7]piy[/] [dim]coding agent[/]")
 
 
-class FooterBar(RichLog):
+class FooterBar(Static):
     """Status line: model, cwd, Mac shortcuts."""
 
     DEFAULT_CSS = "FooterBar { dock: bottom; height: 1; background: #111114; }"
 
     def __init__(self, *, model: str = "", cwd: str = "", **kwargs) -> None:
-        super().__init__(**kwargs)
+        super().__init__("", markup=True, **kwargs)
         self._model = model
         self._cwd = cwd
 
@@ -55,23 +58,20 @@ class FooterBar(RichLog):
     def _refresh(self) -> None:
         model = short_model_name(self._model)
         cwd = shorten_path(self._cwd)
-        self.clear()
-        self.write(
+        self.update(
             f"[#7dd3fc]{model}[/] [dim]│[/] [#71717a]{cwd}[/] [dim]│[/] "
             f"[bold]↵[/] 发送  [bold]⇧↵[/] 换行  [bold]⌃C[/] 退出"
         )
 
 
-class TranscriptView(RichLog):
-    """Unified message stream: history, streaming, and tool calls."""
+class TranscriptView(Static):
+    """Unified message stream — full repaint each update to avoid RichLog ghosting."""
 
     def __init__(self, **kwargs) -> None:
-        super().__init__(highlight=True, markup=True, wrap=True, **kwargs)
+        super().__init__(f"[dim]{_EMPTY_HINT}[/]", markup=True, **kwargs)
+        self._blocks: list[str] = []
         self._plain_lines: list[str] = []
         self._streaming: str | None = None
-
-    def on_mount(self) -> None:
-        self.write(f"[dim]{_EMPTY_HINT}[/]")
 
     def visible_text(self) -> str:
         parts = list(self._plain_lines)
@@ -79,40 +79,55 @@ class TranscriptView(RichLog):
             parts.append(self._streaming)
         return "\n".join(parts)
 
-    def _write_block(self, line: str, *, plain: str) -> None:
-        if not self._plain_lines and self._streaming is None:
-            self.clear()
+    def _compose_markup(self) -> str:
+        if not self._blocks and self._streaming is None:
+            return f"[dim]{_EMPTY_HINT}[/]"
+        parts = list(self._blocks)
+        if self._streaming is not None:
+            body = self._streaming.replace("\n", "\n  ")
+            parts.append(f"[bold #7dd3fc]pi[/] …\n  {body}")
+        return "\n\n".join(parts)
+
+    def _paint(self) -> None:
+        self.update(self._compose_markup())
+
+    def _append_block(self, *, markup: str, plain: str) -> None:
+        self._blocks.append(markup)
         self._plain_lines.append(plain)
-        self.write(line)
+        self._paint()
 
     def append_settled(self, role: str, content: str) -> None:
         labels = {"user": "you", "assistant": "pi", "tool": "tool", "error": "error"}
         label = labels.get(role, role)
         body = content.replace("\n", "\n  ")
         plain = f"{label}:\n  {body}"
-        self._write_block(f"[bold]{label}[/]\n  {body}", plain=plain)
+        self._append_block(markup=f"[bold]{label}[/]\n  {body}", plain=plain)
 
     def set_streaming(self, content: str) -> None:
         self._streaming = content
-        self.clear()
-        for plain in self._plain_lines:
-            self.write(plain)
-        self.write(f"[bold #7dd3fc]pi[/] …\n  {content.replace(chr(10), chr(10) + '  ')}")
+        self._paint()
 
     def clear_streaming(self) -> None:
         self._streaming = None
+        self._paint()
 
     def tool_start(self, name: str, args: dict) -> None:
         arg_preview = ", ".join(f"{k}={v!r}" for k, v in args.items())
         plain = f"▸ {name} {arg_preview}"
-        self._write_block(f"[#a78bfa]▸ {name}[/] [dim]{arg_preview}[/]", plain=plain)
+        self._append_block(
+            markup=f"[#a78bfa]▸ {name}[/] [dim]{arg_preview}[/]",
+            plain=plain,
+        )
 
     def tool_end(self, name: str, content: str, *, is_error: bool) -> None:
         status = "failed" if is_error else "done"
         preview = _shorten(content)
         plain = f"  {name} {status}: {preview}"
         color = "#f87171" if is_error else "#34d399"
-        self._write_block(f"[dim]  {name}[/] [{color}]{status}[/] [dim]{preview}[/]", plain=plain)
+        self._append_block(
+            markup=f"[dim]  {name}[/] [{color}]{status}[/] [dim]{preview}[/]",
+            plain=plain,
+        )
 
 
 class EditorWidget(TextArea):
@@ -174,11 +189,11 @@ class CodingApp(App[None]):
         self._cwd = cwd
 
     def compose(self) -> ComposeResult:
-        yield HeaderBar(id="header", markup=True)
+        yield HeaderBar(id="header")
         with Vertical(id="layout-main"):
             yield TranscriptView(id="transcript")
             yield EditorWidget(on_submit=self._on_submit, id="editor")
-        yield FooterBar(model=self._model, cwd=self._cwd, id="footer", markup=True)
+        yield FooterBar(model=self._model, cwd=self._cwd, id="footer")
 
     def action_request_quit(self) -> None:
         self.exit()

@@ -36,6 +36,7 @@ async def probe_size(name: str, cols: int, rows: int) -> None:
         editor.set_text("继续")
         await pilot.pause()
         app.save_screenshot(filename=f"{name}-active.svg", path=str(OUT_DIR))
+        await pilot.pause(delay=0.05)
 
         transcript.tool_end("read", "# pi-python\n\nPython 实现...", is_error=False)
         transcript.clear_streaming()

@@ -2,7 +2,11 @@
 
 Python 实现对齐 [earendil-works/pi](https://github.com/earendil-works/pi) 的语义与扩展模型：薄 LLM 对接层、agent runtime、Textual TUI、可日常使用的交互式 coding CLI（`piy`）。
 
-> 领域词汇与架构决策见 [`CONTEXT.md`](CONTEXT.md)。
+**本项目定位：** 以**体验 agent 开发流程**为主——从领域建模、wayfinding 拆票，到用 [mattpocock/skills](https://github.com/mattpocock/skills) 里的 agent skills（如 `/wayfinder`、`/research`、`/grilling`）驱动实现，在 Python 里复刻 pi 的核心路径（LLM → agent loop → 工具 → TUI）。不是上游 pi 的替代品，而是一个可 hack 的实验床。
+
+**开发方式：** 仓库内的规划、调研与实现会话大量依赖 [mattpocock/skills](https://github.com/mattpocock/skills)（Matt Pocock 的 Agent Skills 合集，从 `.agents/skills/` 布局安装）。本仓库的 `AGENTS.md`、issue 工作流与 wayfinder 地图均按该套 skills 约定组织；`piy` 运行时也会扫描 `~/.agents/skills/` 加载同名技能说明。
+
+> 领域词汇与架构决策见 [`CONTEXT.md`](CONTEXT.md)。四包关系与扩展点见 [`docs/architecture.md`](docs/architecture.md)。
 
 ## 要求
 

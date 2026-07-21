@@ -54,6 +54,8 @@ async def run_e2e(*, cwd: Path, model: str, out: Path, prompt: str) -> None:
 
         await session.prompt(prompt)
         await pilot.pause()
+        # Let the compositor finish after streaming clears — avoids screenshot ghosting.
+        await pilot.pause(delay=0.05)
 
         text = transcript.visible_text()
         if "pi" not in text and "assistant" not in text:
