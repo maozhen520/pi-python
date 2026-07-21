@@ -29,6 +29,24 @@ class LoadedResources:
     project_context: str = ""
 
 
+def _is_under(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+def _resolve_extra_path(raw: str, *, cwd: Path, agent_dir: Path, trusted: bool) -> Path | None:
+    """Resolve a settings path; skip project-tree paths when the project is untrusted."""
+    path = Path(raw)
+    if not path.is_absolute():
+        path = (cwd if trusted else agent_dir) / path
+    if not trusted and _is_under(path, cwd):
+        return None
+    return path
+
+
 def load_resources(
     *,
     cwd: Path | None = None,
@@ -65,14 +83,16 @@ def load_resources(
             add_skills(discover_skills_in_dir(agents_dir, agents_layout=True))
 
     for extra in settings.get("skills") or []:
-        if isinstance(extra, str):
-            path = Path(extra)
-            if not path.is_absolute():
-                path = (agent if not trusted else root) / path
-            if path.is_file() and path.name == "SKILL.md":
-                add_skills(discover_skills_in_dir(path.parent.parent, agents_layout=False))
-            elif path.is_dir():
-                add_skills(discover_skills_in_dir(path, agents_layout=False))
+        if not isinstance(extra, str):
+            continue
+        path = _resolve_extra_path(extra, cwd=root, agent_dir=agent, trusted=trusted)
+        if path is None:
+            continue
+        if path.is_file() and path.name == "SKILL.md":
+            # Point at the skill directory, not its parent skills root.
+            add_skills(discover_skills_in_dir(path.parent, agents_layout=False))
+        elif path.is_dir():
+            add_skills(discover_skills_in_dir(path, agents_layout=False))
 
     prompts: list[PromptTemplate] = []
     seen_prompt: set[str] = set()
@@ -88,12 +108,15 @@ def load_resources(
         add_prompts(discover_prompts_in_dir(root / ".pi" / "prompts"))
 
     for extra in settings.get("prompts") or []:
-        if isinstance(extra, str):
-            path = Path(extra)
-            if path.is_file():
-                add_prompts(discover_prompts_in_dir(path.parent))
-            elif path.is_dir():
-                add_prompts(discover_prompts_in_dir(path))
+        if not isinstance(extra, str):
+            continue
+        path = _resolve_extra_path(extra, cwd=root, agent_dir=agent, trusted=trusted)
+        if path is None:
+            continue
+        if path.is_file():
+            add_prompts(discover_prompts_in_dir(path.parent))
+        elif path.is_dir():
+            add_prompts(discover_prompts_in_dir(path))
 
     return LoadedResources(
         skills=skills,
