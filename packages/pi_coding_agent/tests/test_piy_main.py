@@ -31,7 +31,7 @@ from pi_agent import (
     ToolResultMessage,
     UserMessage,
 )
-from pi_tui import CodingApp, StreamingAssistantView, ToolDisplay, TranscriptView
+from pi_tui import CodingApp, TranscriptView
 
 
 def _scripted_stream(responses: list[AssistantMessage]):
@@ -219,8 +219,6 @@ async def test_bind_tui_applies_runtime_events_to_widgets(
     unsub = session.bind_tui(app)
     async with app.run_test() as pilot:
         transcript = app.query_one(TranscriptView)
-        streaming = app.query_one(StreamingAssistantView)
-        tools = app.query_one(ToolDisplay)
 
         apply_agent_event(app, MessageEndEvent(message=UserMessage(content="hello user")))
         await pilot.pause()
@@ -238,7 +236,7 @@ async def test_bind_tui_applies_runtime_events_to_widgets(
             ),
         )
         await pilot.pause()
-        assert "Hel" in streaming.visible_text()
+        assert "Hel" in transcript.visible_text()
 
         apply_agent_event(
             app,
@@ -258,13 +256,13 @@ async def test_bind_tui_applies_runtime_events_to_widgets(
             ),
         )
         await pilot.pause()
-        assert "read" in tools.visible_text()
-        assert "ok" in tools.visible_text()
+        assert "read" in transcript.visible_text()
+        assert "ok" in transcript.visible_text()
 
         await session.prompt("go")
         await pilot.pause()
         assert "done via events" in transcript.visible_text()
-        assert streaming.visible_text() == ""
+        assert transcript._streaming is None  # noqa: SLF001
 
     unsub()
 
@@ -280,7 +278,7 @@ def test_cli_main_wires_piy_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 
     captured: dict[str, CodingSession] = {}
 
-    async def fake_run_interactive(session: CodingSession) -> None:
+    async def fake_run_interactive(session: CodingSession, *, model: str) -> None:
         captured["session"] = session
 
     monkeypatch.setattr(cli, "_run_interactive", fake_run_interactive)
@@ -320,13 +318,12 @@ async def test_bind_tui_streaming_deltas_via_session_prompt(
     unsub_tui = session.bind_tui(app)
 
     async with app.run_test() as pilot:
-        streaming = app.query_one(StreamingAssistantView)
         transcript = app.query_one(TranscriptView)
         await session.prompt("go")
         await pilot.pause()
         assert "message_update" in event_types
         assert "Hello" in transcript.visible_text()
-        assert streaming.visible_text() == ""
+        assert transcript._streaming is None  # noqa: SLF001
 
     unsub_tui()
     unsub_events()

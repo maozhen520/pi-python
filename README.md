@@ -48,6 +48,21 @@ export OPENAI_API_KEY=sk-...
 uv run piy
 ```
 
+**DeepSeek（OpenAI 兼容接口）示例** — 写入 `~/.pi/agent/auth.json`：
+
+```json
+{
+  "OPENAI_API_KEY": "sk-你的密钥",
+  "OPENAI_API_BASE": "https://api.deepseek.com/v1"
+}
+```
+
+启动时指定模型：
+
+```bash
+uv run piy --approve --model openai/deepseek-v4-flash
+```
+
 默认模型为 `gpt-4o-mini`，可通过环境变量或 CLI 覆盖：
 
 ```bash
@@ -89,12 +104,31 @@ uv run piy --non-interactive  # 禁用 trust/auth 交互提示
 
 | 操作 | 说明 |
 |------|------|
-| `Ctrl+J` | 提交底部编辑器中的输入 |
+| `↵` / `Enter` | 提交底部编辑器中的输入 |
+| `⇧↵` | 换行 |
+| `Ctrl+J` | 提交（兼容快捷键） |
+| `Ctrl+C` | 退出 |
 | `/exit` 或 `/quit` | 退出 |
 | `/compact [说明]` | 手动压缩上下文（写入 session JSONL） |
 | `/模板名 参数...` | 展开 `prompts/` 下的提示模板 |
 
-界面由四块组成：**transcript**（已结算消息）、**streaming**（流式助手文本）、**tools**（工具调用）、**editor**（多行输入）。
+界面对齐上游 [pi](https://github.com/earendil-works/pi) 交互模式（自上而下）：
+
+| 区域 | 说明 |
+|------|------|
+| **Header** | 品牌标识 |
+| **Messages** | 统一消息流：user / pi 回复、流式输出、工具调用 |
+| **Editor** | 多行输入框，`↵` 提交 |
+| **Footer** | 当前模型、工作目录、快捷键提示 |
+
+![piy TUI 端到端实测（DeepSeek deepseek-v4-flash）](docs/assets/piy-tui-e2e.png)
+
+上图由 live E2E 脚本生成：真实 API 调用 → agent harness → TUI 渲染，一轮对话后自动截图。复现：
+
+```bash
+# 需已配置 ~/.pi/agent/auth.json（见上文 DeepSeek 示例）
+uv run python scripts/e2e_live_tui.py
+```
 
 ### 配置与资源目录
 
@@ -221,6 +255,9 @@ uv sync --group dev
 uv run pytest
 uv run ruff check .
 uv run ty check
+
+# 可选：live E2E（需 API 凭证，不走 CI）
+uv run python scripts/e2e_live_tui.py
 ```
 
 ### 包结构

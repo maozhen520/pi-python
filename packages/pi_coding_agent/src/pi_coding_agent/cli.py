@@ -82,19 +82,19 @@ def main(argv: list[str] | None = None) -> None:
         )
 
     try:
-        asyncio.run(_run_interactive(session))
+        asyncio.run(_run_interactive(session, model=args.model))
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)
         raise SystemExit(130) from None
 
 
-async def _run_interactive(session: CodingSession) -> None:
+async def _run_interactive(session: CodingSession, *, model: str) -> None:
     queue: asyncio.Queue[str] = asyncio.Queue()
 
     def on_submit(text: str) -> None:
         queue.put_nowait(text)
 
-    app = CodingApp(on_submit=on_submit)
+    app = CodingApp(on_submit=on_submit, model=model, cwd=str(session.cwd))
     session.bind_tui(app)
 
     async def worker() -> None:

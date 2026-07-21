@@ -13,23 +13,21 @@ from pi_agent import (
     ToolResultMessage,
     UserMessage,
 )
-from pi_tui import CodingApp, StreamingAssistantView, ToolDisplay, TranscriptView
+from pi_tui import CodingApp, TranscriptView
 
 
 def apply_agent_event(app: CodingApp, event: AgentEvent) -> None:
-    """Apply one agent runtime event to the four v1 UI blocks."""
+    """Apply one agent runtime event to the unified transcript."""
     transcript = app.query_one(TranscriptView)
-    streaming = app.query_one(StreamingAssistantView)
-    tools = app.query_one(ToolDisplay)
 
     if isinstance(event, (MessageStartEvent, MessageUpdateEvent)) and isinstance(
         event.message, AssistantMessage
     ):
-        streaming.set_streaming(event.message.content or "")
+        transcript.set_streaming(event.message.content or "")
         return
 
     if isinstance(event, MessageEndEvent):
-        streaming.clear()
+        transcript.clear_streaming()
         message = event.message
         if isinstance(message, UserMessage):
             transcript.append_settled("user", message.content)
@@ -40,11 +38,11 @@ def apply_agent_event(app: CodingApp, event: AgentEvent) -> None:
         return
 
     if isinstance(event, ToolExecutionStartEvent):
-        tools.tool_start(event.tool_name, event.args)
+        transcript.tool_start(event.tool_name, event.args)
         return
 
     if isinstance(event, ToolExecutionEndEvent):
-        tools.tool_end(
+        transcript.tool_end(
             event.tool_name,
             event.result.content or "",
             is_error=event.is_error,

@@ -3,15 +3,15 @@
 from pi_tui.widgets import (
     CodingApp,
     EditorWidget,
-    StreamingAssistantView,
-    ToolDisplay,
+    FooterBar,
+    HeaderBar,
     TranscriptView,
 )
 
 __all__ = [
     "CodingApp",
     "EditorWidget",
-    "StreamingAssistantView",
-    "ToolDisplay",
+    "FooterBar",
+    "HeaderBar",
     "TranscriptView",
 ]
