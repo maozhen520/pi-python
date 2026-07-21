@@ -193,6 +193,10 @@ class Session:
     def messages(self) -> list[AgentMessage]:
         return list(self._messages)
 
+    @property
+    def latest_compaction(self) -> CompactionEntry | None:
+        return self._compactions[-1] if self._compactions else None
+
     def entries(self) -> list[Any]:
         return [*self._messages, *self._compactions]
 

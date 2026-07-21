@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from pi_agent import Agent, AgentEvent, StreamFn
@@ -82,7 +82,9 @@ class CodingSession:
     resources: LoadedResources
     system_prompt: str
     store: SessionStore
-    _persisted_count: int = field(default=0, repr=False)
+    context_window: int = 128_000
+    reserve_tokens: int = 20_000
+    keep_recent_tokens: int = 800
 
     @classmethod
     def create(
@@ -113,14 +115,13 @@ class CodingSession:
             messages=[],
             transform_context=cls._make_transform(session),
         )
-        return cls(
+        return cls._from_parts(
             cwd=cwd,
             agent=agent,
             session=session,
             resources=resources,
             system_prompt=system_prompt,
             store=store,
-            _persisted_count=0,
         )
 
     @classmethod
@@ -150,9 +151,30 @@ class CodingSession:
             stream_fn=stream_fn,
             system_prompt=system_prompt,
             tools=create_builtin_tools(cwd=cwd),
-            messages=session.model_messages(),
+            messages=session.messages,
             transform_context=cls._make_transform(session),
         )
+        return cls._from_parts(
+            cwd=cwd,
+            agent=agent,
+            session=session,
+            resources=resources,
+            system_prompt=system_prompt,
+            store=store,
+        )
+
+    @classmethod
+    def _from_parts(
+        cls,
+        *,
+        cwd: Path,
+        agent: Agent,
+        session: Session,
+        resources: LoadedResources,
+        system_prompt: str,
+        store: SessionStore,
+    ) -> CodingSession:
+        settings = resources.settings
         return cls(
             cwd=cwd,
             agent=agent,
@@ -160,15 +182,18 @@ class CodingSession:
             resources=resources,
             system_prompt=system_prompt,
             store=store,
-            _persisted_count=len(session.messages),
+            context_window=int(settings.get("contextWindow", 128_000)),
+            reserve_tokens=int(settings.get("reserveTokens", 20_000)),
+            keep_recent_tokens=int(settings.get("keepRecentTokens", 800)),
         )
 
     @staticmethod
     def _make_transform(session: Session):
         def transform(messages):
-            if session._compactions:
-                return apply_compaction_view(list(messages), session._compactions[-1])
-            return list(messages)
+            compaction = session.latest_compaction
+            if compaction is None:
+                return list(messages)
+            return apply_compaction_view(list(messages), compaction)
 
         return transform
 
@@ -185,16 +210,24 @@ class CodingSession:
         await self.agent.prompt(text)
         for message in self.agent.messages[before:]:
             self.session.append_message(message)
-            self._persisted_count += 1
+        self.session.maybe_auto_compact(
+            context_window=self.context_window,
+            reserve_tokens=self.reserve_tokens,
+            keep_recent_tokens=self.keep_recent_tokens,
+            summarize=lambda msgs, instructions: (
+                f"[auto-compact {len(msgs)} messages"
+                f"{': ' + instructions if instructions else ''}]"
+            ),
+        )
 
     def handle_compact(self, instructions: str = "") -> None:
-        summary = f"[compacted{': ' + instructions if instructions else ''}]"
-        entry = self.session.compact(
-            summary=summary,
-            keep_recent_tokens=800,
+        # Append compaction entry only; Agent keeps the full live transcript.
+        # Model context is summary + tail via transform_context.
+        self.session.compact(
+            summary=f"[compacted{': ' + instructions if instructions else ''}]",
+            keep_recent_tokens=self.keep_recent_tokens,
             instructions=instructions,
         )
-        self.agent.messages = apply_compaction_view(self.session.messages, entry)
 
     def _expand_slash(self, text: str) -> str | None:
         body = text[1:]

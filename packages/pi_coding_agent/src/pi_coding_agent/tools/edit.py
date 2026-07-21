@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -83,35 +82,6 @@ def _strip_bom(content: str) -> tuple[str, str]:
     return "", content
 
 
-def _normalize_for_fuzzy(text: str) -> str:
-    text = "\n".join(line.rstrip() for line in text.split("\n"))
-    text = (
-        text.replace("\u2018", "'")
-        .replace("\u2019", "'")
-        .replace("\u201a", "'")
-        .replace("\u201b", "'")
-        .replace("\u201c", '"')
-        .replace("\u201d", '"')
-        .replace("\u201e", '"')
-        .replace("\u201f", '"')
-    )
-    text = re.sub(r"[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]", "-", text)
-    text = re.sub(r"[\u00a0\u2002-\u200a\u202f\u205f\u3000]", " ", text)
-    return text
-
-
-def _find_match(content: str, old_text: str) -> tuple[int, int] | None:
-    exact = content.find(old_text)
-    if exact != -1:
-        return exact, exact + len(old_text)
-    fuzzy_content = _normalize_for_fuzzy(content)
-    fuzzy_old = _normalize_for_fuzzy(old_text)
-    idx = fuzzy_content.find(fuzzy_old)
-    if idx == -1:
-        return None
-    return idx, idx + len(fuzzy_old)
-
-
 def prepare_edit_arguments(args: dict[str, Any]) -> dict[str, Any]:
     prepared = dict(args)
     edits = prepared.get("edits")
@@ -134,10 +104,12 @@ def prepare_edit_arguments(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def apply_edits(content: str, edits: list[_Edit], path: str) -> str:
-    normalized = _normalize_to_lf(content)
+    """Apply exact multi-replace against the original (LF-normalized) file content."""
+    base = _normalize_to_lf(content)
     if not edits:
         raise ValueError("Edit tool input is invalid. edits must contain at least one replacement.")
 
+    matches: list[_Match] = []
     for i, edit in enumerate(edits):
         if not edit.old_text:
             raise ValueError(
@@ -145,12 +117,8 @@ def apply_edits(content: str, edits: list[_Edit], path: str) -> str:
                 if len(edits) > 1
                 else f"oldText must not be empty in {path}."
             )
-
-    matches: list[_Match] = []
-    use_fuzzy = False
-    for i, edit in enumerate(edits):
-        found = _find_match(normalized, edit.old_text)
-        if found is None:
+        occurrences = base.count(edit.old_text)
+        if occurrences == 0:
             raise ValueError(
                 f"Could not find the exact text in {path}. The old text must match exactly "
                 "including all whitespace and newlines."
@@ -160,33 +128,21 @@ def apply_edits(content: str, edits: list[_Edit], path: str) -> str:
                     "The oldText must match exactly including all whitespace and newlines."
                 )
             )
-        if normalized.find(edit.old_text) == -1:
-            use_fuzzy = True
-
-    base = _normalize_for_fuzzy(normalized) if use_fuzzy else normalized
-
-    for i, edit in enumerate(edits):
-        old = _normalize_for_fuzzy(edit.old_text) if use_fuzzy else edit.old_text
-        new = edit.new_text if not use_fuzzy else _normalize_to_lf(edit.new_text)
-        occurrences = base.count(old)
-        if occurrences == 0:
-            raise ValueError(
-                f"Could not find edits[{i}] in {path}. The oldText must match exactly "
-                "including all whitespace and newlines."
-                if len(edits) > 1
-                else (
-                    f"Could not find the exact text in {path}. The old text must match exactly "
-                    "including all whitespace and newlines."
-                )
-            )
         if edit.replace_all:
             start = 0
             while True:
-                idx = base.find(old, start)
+                idx = base.find(edit.old_text, start)
                 if idx == -1:
                     break
-                matches.append(_Match(edit_index=i, start=idx, end=idx + len(old), new_text=new))
-                start = idx + len(old)
+                matches.append(
+                    _Match(
+                        edit_index=i,
+                        start=idx,
+                        end=idx + len(edit.old_text),
+                        new_text=edit.new_text,
+                    )
+                )
+                start = idx + len(edit.old_text)
         else:
             if occurrences > 1:
                 raise ValueError(
@@ -198,8 +154,15 @@ def apply_edits(content: str, edits: list[_Edit], path: str) -> str:
                         "Each oldText must be unique unless replace_all is true."
                     )
                 )
-            idx = base.find(old)
-            matches.append(_Match(edit_index=i, start=idx, end=idx + len(old), new_text=new))
+            idx = base.find(edit.old_text)
+            matches.append(
+                _Match(
+                    edit_index=i,
+                    start=idx,
+                    end=idx + len(edit.old_text),
+                    new_text=edit.new_text,
+                )
+            )
 
     matches.sort(key=lambda m: m.start)
     for prev, cur in zip(matches, matches[1:], strict=False):
@@ -213,13 +176,9 @@ def apply_edits(content: str, edits: list[_Edit], path: str) -> str:
     for match in reversed(matches):
         result = result[: match.start] + match.new_text + result[match.end :]
 
-    if result == normalized and not use_fuzzy:
+    if result == base:
         raise ValueError(f"No changes made to {path}. The replacements produced identical content.")
-    if use_fuzzy and result == base:
-        raise ValueError(f"No changes made to {path}. The replacements produced identical content.")
-    # When fuzzy matching was used, write the fuzzy-normalized result (trailing ws normalized).
-    # For exact matching, keep original LF-normalized content structure.
-    return result if use_fuzzy else result
+    return result
 
 
 def create_edit_tool(cwd: Path) -> AgentTool:
