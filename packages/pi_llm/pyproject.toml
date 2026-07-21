@@ -1,0 +1,13 @@
+[project]
+name = "pi_llm"
+version = "0.1.0"
+description = "Thin LiteLLM adapter for the pi-python agent runtime"
+requires-python = ">=3.11"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pi_llm"]
